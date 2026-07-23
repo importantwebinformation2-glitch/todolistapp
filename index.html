@@ -1,0 +1,203 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>To-Do List with Firebase Firestore</title>
+  <!-- Bootstrap CSS -->
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+  <style>
+    .completed { text-decoration: line-through; color: gray; }
+    .high { color: red; font-weight: bold; }
+    .medium { color: orange; }
+    .low { color: green; }
+  </style>
+</head>
+<body class="container py-4">
+  <h1 class="text-center mb-4">My Cloud To-Do List</h1>
+
+  <!-- Login Form -->
+  <div id="loginDiv" class="mb-4">
+    <input type="email" id="email" class="form-control mb-2" placeholder="Email">
+    <input type="password" id="password" class="form-control mb-2" placeholder="Password">
+    <button class="btn btn-primary" onclick="login()">Login</button>
+    <button class="btn btn-secondary" onclick="signup()">Sign Up</button>
+  </div>
+
+  <!-- Logout Button -->
+  <div id="logoutDiv" class="mb-4 d-none">
+    <button class="btn btn-danger" onclick="logout()">Logout</button>
+  </div>
+
+  <!-- Task Input -->
+  <div id="taskDiv" class="d-none">
+    <div class="row mb-3">
+      <div class="col-md-4">
+        <input type="text" id="taskInput" class="form-control" placeholder="Enter a task">
+      </div>
+      <div class="col-md-3">
+        <input type="date" id="dueDate" class="form-control">
+      </div>
+      <div class="col-md-3">
+        <select id="priority" class="form-select">
+          <option value="high">High</option>
+          <option value="medium">Medium</option>
+          <option value="low">Low</option>
+        </select>
+      </div>
+      <div class="col-md-2">
+        <button class="btn btn-success w-100" onclick="addTask()">Add</button>
+      </div>
+    </div>
+
+    <input type="text" id="searchInput" class="form-control mb-3" placeholder="Search tasks..." onkeyup="searchTasks()">
+
+    <button class="btn btn-info me-2" onclick="sortByPriority()">Sort by Priority</button>
+    <button class="btn btn-info" onclick="sortByDate()">Sort by Date</button>
+
+    <ul id="todo-list" class="list-group mt-3"></ul>
+  </div>
+
+  <!-- Firebase SDK -->
+  <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-app.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-auth.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-firestore.js"></script>
+
+  <script>
+    // TODO: Replace with your Firebase project config
+    const firebaseConfig = {
+      apiKey: "YOUR_API_KEY",
+      authDomain: "YOUR_PROJECT_ID.firebaseapp.com",
+      projectId: "YOUR_PROJECT_ID",
+      storageBucket: "YOUR_PROJECT_ID.appspot.com",
+      messagingSenderId: "YOUR_SENDER_ID",
+      appId: "YOUR_APP_ID"
+    };
+
+    // Initialize Firebase
+    const app = firebase.initializeApp(firebaseConfig);
+    const auth = firebase.auth();
+    const db = firebase.firestore();
+
+    // Auth functions
+    function signup() {
+      auth.createUserWithEmailAndPassword(
+        document.getElementById("email").value,
+        document.getElementById("password").value
+      ).catch(error => alert(error.message));
+    }
+
+    function login() {
+      auth.signInWithEmailAndPassword(
+        document.getElementById("email").value,
+        document.getElementById("password").value
+      ).catch(error => alert(error.message));
+    }
+
+    function logout() {
+      auth.signOut();
+    }
+
+    auth.onAuthStateChanged(user => {
+      if (user) {
+        document.getElementById("loginDiv").classList.add("d-none");
+        document.getElementById("logoutDiv").classList.remove("d-none");
+        document.getElementById("taskDiv").classList.remove("d-none");
+        loadTasks(user.uid);
+      } else {
+        document.getElementById("loginDiv").classList.remove("d-none");
+        document.getElementById("logoutDiv").classList.add("d-none");
+        document.getElementById("taskDiv").classList.add("d-none");
+      }
+    });
+
+    // Firestore task functions
+    function addTask() {
+      let input = document.getElementById("taskInput");
+      let dueDate = document.getElementById("dueDate").value;
+      let priority = document.getElementById("priority").value;
+      let task = input.value.trim();
+
+      if (task !== "" && auth.currentUser) {
+        db.collection("tasks").add({
+          uid: auth.currentUser.uid,
+          text: task,
+          due: dueDate,
+          priority: priority,
+          completed: false,
+          created: firebase.firestore.FieldValue.serverTimestamp()
+        });
+        input.value = "";
+        document.getElementById("dueDate").value = "";
+      }
+    }
+
+    function renderTask(doc) {
+      let taskObj = doc.data();
+      let li = document.createElement("li");
+      li.className = "list-group-item";
+      li.innerHTML = `${taskObj.text} - Due: ${taskObj.due || "No date"} - Priority: <span class="${taskObj.priority}">${taskObj.priority}</span>`;
+      if (taskObj.completed) li.classList.add("completed");
+
+      let completeBtn = document.createElement("button");
+      completeBtn.className = "btn btn-sm btn-outline-success ms-2";
+      completeBtn.textContent = taskObj.completed ? "Undo" : "Complete";
+      completeBtn.onclick = function() {
+        db.collection("tasks").doc(doc.id).update({ completed: !taskObj.completed });
+      };
+
+      let editBtn = document.createElement("button");
+      editBtn.className = "btn btn-sm btn-outline-warning ms-2";
+      editBtn.textContent = "Edit";
+      editBtn.onclick = function() {
+        let newText = prompt("Edit task:", taskObj.text);
+        let newDate = prompt("Edit due date (YYYY-MM-DD):", taskObj.due);
+        let newPriority = prompt("Edit priority (high/medium/low):", taskObj.priority);
+        db.collection("tasks").doc(doc.id).update({
+          text: newText || taskObj.text,
+          due: newDate || taskObj.due,
+          priority: newPriority || taskObj.priority
+        });
+      };
+
+      let removeBtn = document.createElement("button");
+      removeBtn.className = "btn btn-sm btn-outline-danger ms-2";
+      removeBtn.textContent = "Remove";
+      removeBtn.onclick = function() {
+        db.collection("tasks").doc(doc.id).delete();
+      };
+
+      li.appendChild(completeBtn);
+      li.appendChild(editBtn);
+      li.appendChild(removeBtn);
+      document.getElementById("todo-list").appendChild(li);
+    }
+
+    function loadTasks(uid) {
+      db.collection("tasks").where("uid", "==", uid).orderBy("created").onSnapshot(snapshot => {
+        document.getElementById("todo-list").innerHTML = "";
+        snapshot.forEach(doc => renderTask(doc));
+      });
+    }
+
+    function searchTasks() {
+      let filter = document.getElementById("searchInput").value.toLowerCase();
+      let listItems = document.querySelectorAll("#todo-list li");
+      listItems.forEach(li => {
+        if (li.textContent.toLowerCase().includes(filter)) {
+          li.style.display = "";
+        } else {
+          li.style.display = "none";
+        }
+      });
+    }
+
+    function sortByPriority() {
+      // Sorting handled by Firestore query if needed
+      alert("For advanced sorting, use Firestore queries with orderBy on priority.");
+    }
+
+    function sortByDate() {
+      alert("For advanced sorting, use Firestore queries with orderBy on due date.");
+    }
+  </script>
+</body>
+</html>
